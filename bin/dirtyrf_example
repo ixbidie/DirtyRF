@@ -1,0 +1,39 @@
+#!/usr/bin/python
+
+import dirtyrf
+import numpy as np
+import matplotlib.pyplot as plt
+
+# generate random 4QAM symbols
+# \param n number of samples
+def gen4QAM(n):
+  valSet = [-1, 1]
+  i = np.round(np.random.random(n))
+  q = np.round(np.random.random(n))
+  return i-0.5 + (q-0.5)*1j
+
+
+def example1():
+  sim = dirtyrf.DirtyRF(beta=5, IIP3=2.2, IIP5=1.4, alpha=0.8, phi=0.2, Ts=1e-6)
+  x = gen4QAM(200)
+
+  y1 = np.asarray(map(sim.pn, x))
+  y2 = np.asarray(map(sim.nl, x))
+  y3 = np.asarray(map(sim.iq, x))
+
+  plt.figure("PN")
+  plt.plot(y1.real, y1.imag, 'ro')
+  plt.plot(x.real, x.imag, 'bo')
+  
+  plt.figure("NL")
+  plt.plot(y2.real, y2.imag, 'ro')
+  plt.plot(x.real, x.imag, 'bo')
+  
+  plt.figure("IQ")
+  plt.plot(y3.real, y3.imag, 'ro')
+  plt.plot(x.real, x.imag, 'bo')
+  
+  plt.show() 
+
+
+example1()
