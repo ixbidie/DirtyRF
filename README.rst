@@ -9,10 +9,10 @@ Setup
 -----
 
 1. Installation
-    run install.sh in the repositories root dir
+    run install.sh in the repositories root dir _as root_
   
 2. Uninstall
-    run uninstall.sh in the repositories root dir
+    run uninstall.sh in the repositories root dir _as root_
 
 
 
