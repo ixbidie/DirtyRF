@@ -12,6 +12,10 @@ def gen4QAM(n):
   q = np.round(np.random.random(n))
   return i-0.5 + (q-0.5)*1j
 
+# p is smoothness factor
+# A is the clipping amplitude
+#def calcIIP(p, A):
+
 
 def example1():
   sim = dirtyrf.DirtyRF(beta=5, IIP3=2.2, IIP5=1.4, alpha=0.8, phi=0.2, Ts=1e-6)
@@ -20,18 +24,43 @@ def example1():
   y1 = np.asarray(map(sim.pn, x))
   y2 = np.asarray(map(sim.nl, x))
   y3 = np.asarray(map(sim.iq, x))
+  p = 1.5
+  A = 1
+  y4 = []
+  for e in x:
+    y4.append(sim.nlSSA(e, p, A))
 
-  plt.figure("PN")
-  plt.plot(y1.real, y1.imag, 'ro')
-  plt.plot(x.real, x.imag, 'bo')
   
-  plt.figure("NL")
-  plt.plot(y2.real, y2.imag, 'ro')
-  plt.plot(x.real, x.imag, 'bo')
   
-  plt.figure("IQ")
-  plt.plot(y3.real, y3.imag, 'ro')
-  plt.plot(x.real, x.imag, 'bo')
+  n = 128.0
+  end = 10
+  d1 = []
+  dSSA = []
+  d2 = np.arange(end, step=end/n)
+  for i in range(0,int(n)):
+    val = end * i / n
+    d1.append(abs(sim.nl(val)))
+    dSSA.append(abs(sim.nlSSA(val, p, A)))
+  
+  plt.figure("NL mapping")
+  #plt.plot(d2, d1)
+  #plt.plot(d2, d2)
+  #plt.plot(abs(y2), abs(x), 'ro')
+  #plt.plot(abs(x), abs(x), 'bo')
+  #plt.plot(d2, dSSA)
+  plt.plot(d2, d1)
+  
+  #plt.figure("NL")
+  #plt.plot(y2.real, y2.imag, 'ro')
+  #plt.plot(x.real, x.imag, 'bo')
+  
+  #plt.figure("IQ")
+  #plt.plot(y3.real, y3.imag, 'ro')
+  #plt.plot(x.real, x.imag, 'bo')
+  
+  #plt.figure("PN")
+  #plt.plot(y1.real, y1.imag, 'ro')
+  #plt.plot(x.real, x.imag, '  bo')
   
   plt.show() 
 
