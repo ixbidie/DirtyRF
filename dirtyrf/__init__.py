@@ -1,5 +1,6 @@
 import numpy as np
 import cmath as cm
+import math as m
 
 
 
@@ -13,9 +14,11 @@ class DirtyRF:
   # the Input Intercept Points (IIP) measured for a certain oscillator. The number stands for the nth order of the IIP
   IIP3          = 0
   IIP5          = 0
+  b2            = -0.15
+  b3            = 0.05
   
   # IQ IMBALANCE
-  # amplitude gain  and phase error of one branch
+  # amplitude gain and phase error of one branch
   alpha         = 0
   phi           = 0
   
@@ -37,44 +40,68 @@ class DirtyRF:
   def setBeta(self, beta):
     self._derivationPn = np.sqrt(4 * np.pi * beta * self.Ts)
   
-  # non-linearities
+  # non-linearities with polynominal representation
   # x - symbol to be distorted
   def nl(self, x):
-    b3 = -4.0 / (3.0*np.power(self.IIP3,2))
-    b5 = 8.0 / (5.0*np.power(self.IIP5,4))
-    return x*( 1 + b3*np.power(x,2) + b5*np.power(x,4) + 0.09*np.power(x,6))
+    i = x.real
+    q = x.imag
+    xp = abs(x)
+    phi = cm.phase(x) #cm.atan(q / i)
+    
+    xp2 = xp*xp
+    xp3 = xp2*xp
+    
+    r_nl = xp + self.b2*xp2 + self.b3*xp3
+    
+    # e to cartesian
+    i = r_nl * cm.cos(phi)
+    q = r_nl * cm.sin(phi)
+    
+    #return i + q*1j
+    return cm.rect(xp + self.b2*xp2 + self.b3*xp3, cm.phase(x))
+
   
   # phase noise
   # x - input symbol
   def pn(self, x):
     self._teta += np.random.normal(scale=self._derivationPn)
-    return x * cm.exp(1j * self._teta)
+    return cm.rect(abs(x), cm.phase(x)+self._teta) #  * cm.exp(1j * self._teta)
+
 
   # iq imbalance
   # x - input symbol, must be complex!
   def iq(self, x):
     if not isinstance(x, complex):
       raise ValueError('input is not a complex number and therefore invalid.')
-    tmp = self.alpha * x.imag
-    i = x.real - tmp * np.sin(self.phi)
-    q = tmp * np.cos(self.phi)
+    amp_dist = self.alpha * x.imag
+    i = x.real - amp_dist * np.sin(self.phi)
+    q = amp_dist * np.cos(self.phi)
     return i + q * 1j
-
-
-
-
   
 
-
-# ---------------------------------------
-# OLD CODE (to be removed)
-
-#def g_poly_ssa(self, A, p=1, A0=1):
-    #IIP3 = np.sqrt(8/3) * A0
-    #IIP5 = np.power(64/3.0 , 1/4.0) * A0
-    #return g(A, IIP3, IIP5)
-
-  #def g_poly_twta(self, A, xA=1, kA=0.25):
-    #IIP3 = np.sqrt(4.0 / 3.0 / kA )
-    #IIP5 = np.power(8 / 5 / np.power(kA,2) , 1.0/4)
-    #return g(A, IIP3, IIP5)
+  # all in one imolementation
+  def impairments(self, x):
+    # iq 
+    amp_dist = self.alpha * x.imag
+    i = x.real - amp_dist * m.sin(self.phi)
+    q = amp_dist * m.cos(self.phi)
+    
+    # conversion e notation
+    r = m.sqrt(i*i + q*q)
+    phi = m.atan2(q, i)
+    
+    # nl
+    xp = r
+    xp2 = xp*xp
+    xp3 = xp2*xp
+    
+    # nl and pn
+    self._teta += np.random.normal(scale=self._derivationPn)
+    phi_pn = phi + self._teta
+    r_nl = xp + self.b2*xp2 + self.b3*xp3
+    
+    # e to cartesian
+    i = r_nl * m.cos(phi_pn)
+    q = r_nl * m.sin(phi_pn)
+    
+    return i + q*1j

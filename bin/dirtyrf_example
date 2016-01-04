@@ -24,43 +24,39 @@ def example1():
   y1 = np.asarray(map(sim.pn, x))
   y2 = np.asarray(map(sim.nl, x))
   y3 = np.asarray(map(sim.iq, x))
-  p = 1.5
-  A = 1
-  y4 = []
-  for e in x:
-    y4.append(sim.nlSSA(e, p, A))
-
-  
+  y4 = np.asarray(map(sim.impairments, x))
   
   n = 128.0
-  end = 10
+  end = 4
   d1 = []
-  dSSA = []
   d2 = np.arange(end, step=end/n)
   for i in range(0,int(n)):
     val = end * i / n
     d1.append(abs(sim.nl(val)))
-    dSSA.append(abs(sim.nlSSA(val, p, A)))
   
   plt.figure("NL mapping")
-  #plt.plot(d2, d1)
-  #plt.plot(d2, d2)
-  #plt.plot(abs(y2), abs(x), 'ro')
-  #plt.plot(abs(x), abs(x), 'bo')
-  #plt.plot(d2, dSSA)
   plt.plot(d2, d1)
   
-  #plt.figure("NL")
-  #plt.plot(y2.real, y2.imag, 'ro')
-  #plt.plot(x.real, x.imag, 'bo')
+  plt.figure("NL, IQ, PN")
+  plt.subplot(221)
+  plt.title('NL')
+  plt.plot(y2.real, y2.imag, 'ro', label='output')
+  plt.plot(x.real, x.imag, 'bo', label='input')
   
-  #plt.figure("IQ")
-  #plt.plot(y3.real, y3.imag, 'ro')
-  #plt.plot(x.real, x.imag, 'bo')
+  plt.subplot(222)
+  plt.title('IQ')
+  plt.plot(y3.real, y3.imag, 'ro')
+  plt.plot(x.real, x.imag, 'bo')
   
-  #plt.figure("PN")
-  #plt.plot(y1.real, y1.imag, 'ro')
-  #plt.plot(x.real, x.imag, '  bo')
+  plt.subplot(223)
+  plt.title('PN')
+  plt.plot(y1.real, y1.imag, 'ro')
+  plt.plot(x.real, x.imag, '  bo')
+  
+  plt.subplot(224)
+  plt.title('ALL')
+  plt.plot(y4.real, y4.imag, 'ro')
+  plt.plot(x.real, x.imag, 'bo')
   
   plt.show() 
 
