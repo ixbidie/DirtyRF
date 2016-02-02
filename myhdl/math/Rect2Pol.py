@@ -7,7 +7,7 @@ from math import *
 t_State = enum("WAITING", "CALCULATING")
 CYCLECOUNT_ITERATION = 2.0
 
-def Rect2Pol_cordic(iReal, iImag, oRadius, oPhase, cycle_constraint, iStart, oDone, clk, reset):
+def Rect2Pol_cordic(iReal, iImag, oRadius, oPhase, cycle_constraint, start, done, clk, reset):
   """
   Cordic based complex number converter from rect to polar with pipelining support
   
@@ -27,76 +27,113 @@ def Rect2Pol_cordic(iReal, iImag, oRadius, oPhase, cycle_constraint, iStart, oDo
   # nr of iterations equals nr of significant input bits
   N = W-1
   
+  # number of needed instances
+  noInst = int(N*CYCLECOUNT_ITERATION/cycle_constraint)
+  print "number of instances: %d" % noInst
+  
+  # number of cycles per brick 
+  n = int(cycle_constraint/CYCLECOUNT_ITERATION)
+  
   # scaling factor corresponds to the nr of bits after the point
   M = 2**(W-2)
   
   # tuple with elementary angles
   alpha = tuple([int(round(M*atan(2**(-i)))) for i in range(N)])
+  
+  
+  def Rect2Polar_brick(iX, iY, iZ, iI, iStart, oX, oY, oZ, oI, oDone, clk, reset, n):
+    """ 
+      pipeling object of the cordic algorithm.
+      
+      x - input x value
+      y - input y value
+      z - input z value
+      i - current counter value
+      n - number of cycles to perform before passing on
+      start - start signal
+      done - done signal
+      clk - clk signal
+      reset - reset signal
+    """
+    
+    @instance
+    def processor():
+      # iterative cordic processor
+      limit = 2**(len(iX)+1)
+      x = intbv(0, min=-limit, max=limit)
+      y = intbv(0, min=-limit, max=limit)
+      z = intbv(0, min=-limit, max=limit)
+      dx = intbv(0, min=iX.min, max=iX.max)
+      dy = intbv(0, min=iX.min, max=iX.max)
+      dz = intbv(0, min=iX.min, max=iX.max)
+      i_end = intbv(0, min=0, max=2*N)
+      i = intbv(0, min=0, max=N)
+      state = t_State.WAITING
 
-  @instance
-  def processor():
-    # iterative cordic processor
-    limit = 2**(len(iReal)+1)
-    x = intbv(0, min=-limit, max=limit)
-    y = intbv(0, min=-limit, max=limit)
-    z = intbv(0, min=-limit, max=limit)
-    dx = intbv(0, min=iReal.min, max=iReal.max)
-    dy = intbv(0, min=iReal.min, max=iReal.max)
-    dz = intbv(0, min=iReal.min, max=iReal.max)
-    i = intbv(0, min=0, max=N)
-    state = t_State.WAITING
+      while True:
+        yield clk.posedge, reset.posedge
 
-    while True:
-      yield clk.posedge, reset.posedge
+        if reset:
+          state = t_State.WAITING
+          oDone.next = False
+          x[:] = 0
+          x[:] = 0
+          z[:] = 0
+          i[:] = 0
 
-      if reset:
-        state = t_State.WAITING
-        oDone.next = False
-        x[:] = 0
-        x[:] = 0
-        z[:] = 0
-        i[:] = 0
+        else:
+          if state == t_State.WAITING:
+            if iStart:
+              #if iX < 0:
+                #x[:] = -iX
+                ##z[:] = int(20000*pi)
+                
+              #else:
+              x[:] = iX
+              y[:] = iY
+              z[:] = iZ
+              i[:] = iI
+              i_end[:] = iI+n-1
+                
+              oDone.next = False
+              state = t_State.CALCULATING
 
-      else:
-        if state == t_State.WAITING:
-          if iStart:
-            #if iReal < 0:
-              #x[:] = -iReal
-              ##z[:] = int(20000*pi)
-              
-            #else:
-            x[:] = iReal
-            y[:] = iImag
-            z[:] = 0
-            i[:] = 0
-              
-            oDone.next = False
-            state = t_State.CALCULATING
+          elif state == t_State.CALCULATING:
+            # shifting performs the 2**(-i) operation
+            dx[:] = x >> i
+            dy[:] = y >> i
+            dz[:] = alpha[int(i)]
+            if (y < 0):
+              #print "dy: %d" % dy
+              x[:] -= dy
+              y[:] += dx
+              z[:] -= dz
+            else:
+                x[:] += dy
+                y[:] -= dx
+                z[:] += dz
+            if i == i_end | i == N-1:
+              oX.next = x
+              oZ.next = z
+              oY.next = y
+              state = t_State.WAITING
+              oDone.next = True
+            else:
+              i += 1
 
-        elif state == t_State.CALCULATING:
-          # shifting performs the 2**(-i) operation
-          dx[:] = x >> i
-          dy[:] = y >> i
-          dz[:] = alpha[int(i)]
-          if (y < 0):
-            #print "dy: %d" % dy
-            x[:] -= dy
-            y[:] += dx
-            z[:] -= dz
-          else:
-              x[:] += dy
-              y[:] -= dx
-              z[:] += dz
-          if i == N-1:
-            oRadius.next = x
-            oPhase.next = z
-            state = t_State.WAITING
-            oDone.next = True
-          else:
-            i += 1
+    return processor
+  
+  
 
-  return processor
-
+  limit = 2**(len(iReal)+1)
+  x = [iReal] + [Signal(intbv(0, min=-limit, max=limit)) for k in range(noInst-1)] + [oRadius]
+  y = [iImag] + [Signal(intbv(0, min=-limit, max=limit)) for k in range(noInst)]
+  z = [Signal(intbv(0, min=-limit, max=limit)) for k in range(noInst)] + [oPhase]
+  i = [Signal(intbv(0, min=0, max=N)) for k in range(noInst+1)]
+  handshakes = [start] + [Signal(bool(False)) for k in range(noInst-1)] + [done]
+  bricks = [Rect2Polar_brick(x[k], y[k], z[k], i[k], handshakes[k], x[k+1], y[k+1], z[k+1], i[k+1], handshakes[k+1], clk, reset, n) for k in range(noInst)]
+  
+  return instances()
 
 ########################################################
 #                                                      #
@@ -165,7 +202,7 @@ class TestRect2PolConverter(TestCase):
       #return (radius, p)
     
     # instances
-    dut = Rect2Pol_cordic(iReal=real, iImag=imag, oRadius=radius, oPhase=phase, cycle_constraint=32, clk=clk, iStart=start, oDone=done, reset=reset)
+    dut = Rect2Pol_cordic(iReal=real, iImag=imag, oRadius=radius, oPhase=phase, cycle_constraint=32, clk=clk, start=start, done=done, reset=reset)
     inst_test = test(real, imag, radius, phase, clk, start, done)
     
     # clock generator
