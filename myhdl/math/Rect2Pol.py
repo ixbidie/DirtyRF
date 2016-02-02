@@ -7,7 +7,7 @@ from math import *
 t_State = enum("WAITING", "CALCULATING")
 CYCLECOUNT_ITERATION = 2.0
 
-def Rect2Pol_cordic(iReal, iImag, oRadius, oPhase, cycle_constraint, iStart, oDone, clk, reset):
+def Rect2Pol_cordic(iReal, iImag, oRadius, oPhase, iStart, oDone, clk, reset):
   """
   Cordic based complex number converter from rect to polar with pipelining support
   
@@ -32,11 +32,16 @@ def Rect2Pol_cordic(iReal, iImag, oRadius, oPhase, cycle_constraint, iStart, oDo
   
   # tuple with elementary angles
   alpha = tuple([int(round(M*atan(2**(-i)))) for i in range(N)])
+  
+  K = int(0.6075 * 2**12)
+  
+  pi_2 = int(M*pi/2)
+  
+  limit = 2**(len(iReal)+1)
 
   @instance
   def processor():
     # iterative cordic processor
-    limit = 2**(len(iReal)+1)
     x = intbv(0, min=-limit, max=limit)
     y = intbv(0, min=-limit, max=limit)
     z = intbv(0, min=-limit, max=limit)
@@ -60,14 +65,19 @@ def Rect2Pol_cordic(iReal, iImag, oRadius, oPhase, cycle_constraint, iStart, oDo
       else:
         if state == t_State.WAITING:
           if iStart:
-            #if iReal < 0:
-              #x[:] = -iReal
-              ##z[:] = int(20000*pi)
-              
-            #else:
-            x[:] = iReal
-            y[:] = iImag
-            z[:] = 0
+            if iReal < 0:
+              if iImag < 0:
+                x[:] = -iImag
+                y[:] = iReal
+                z[:] = -pi_2
+              else:
+                x[:] = iImag
+                y[:] = -iReal
+                z[:] = pi_2
+            else:
+              x[:] = iReal
+              y[:] = iImag
+              z[:] = 0
             i[:] = 0
               
             oDone.next = False
@@ -88,7 +98,7 @@ def Rect2Pol_cordic(iReal, iImag, oRadius, oPhase, cycle_constraint, iStart, oDo
               y[:] -= dx
               z[:] += dz
           if i == N-1:
-            oRadius.next = x
+            oRadius.next = ((x*K) >> 12)
             oPhase.next = z
             state = t_State.WAITING
             oDone.next = True
@@ -108,11 +118,13 @@ class TestRect2PolConverter(TestCase):
   def testQuadrants(self):
     """ Does it compute all angles right? Are the signs ok? """
     
-    # maximal Error
-    dmax = 5
+    # maximal Radius Error
+    # maximal Phase Error
+    dmax_r = 15
+    dmax_p = 5
     
     # input/output width
-    m = 16
+    m = 15
     
     limit = 2**m
     
@@ -120,7 +132,7 @@ class TestRect2PolConverter(TestCase):
     real = Signal(intbv(0, min=-limit, max=limit))
     imag = Signal(intbv(0, min=-limit, max=limit))
     radius = Signal(intbv(0, min=-limit, max=int(sqrt(2)*limit)))
-    phase = Signal(intbv(0, min=-limit, max=limit))
+    phase = Signal(intbv(0, min=-2*limit, max=2*limit))
     start = Signal(bool(False))
     done = Signal(bool(False))
     clk = Signal(bool(0))
@@ -129,7 +141,7 @@ class TestRect2PolConverter(TestCase):
     # test values
     #potencies = (12, 14) # multiplies the values for real and imag with these potencies to test high values as well
     values = []
-    rad = [2**15-1, -2**15-1]
+    rad = [2**15-1, -(2**15-1)]
     
     for r in rad:
       for i in range(9):
@@ -149,23 +161,14 @@ class TestRect2PolConverter(TestCase):
         yield clk.negedge
         start.next = False
         yield done.posedge
-        print "%d: rect(%d, %dj), r = %d, phi = %.2f, r_ref = %d, phi_ref = %.2f" % (now(), rt, it, int(radius*0.60725), (int(phase)/2.0**(m-1)/pi), int(round(ref[0])), ref[1]/pi)
-        #assert abs(ref[0] - radius) < dmax
-        #assert abs(ref[1] - phase) < dmax
+        #print "%d: rect(%d, %dj), radius error = %d, phase error = %d" % (now(), rt, it, abs(int(radius)-ref[0]), abs(int(phase)-int(2**(m-1)*ref[1])) )
+        assert abs(ref[0] - radius) < dmax_r
+        assert abs(2**(m-1)*ref[1] - phase) < dmax_p
       raise StopSimulation
-      
-    #def polar2pi(rectVal):
-      #polar = cm.polar(rectVal[0] + rectVal[1]*1j)
-      #radius = polar[0]
-      #phase = polar[1]
-      #if phase < 0:
-        #p = 2*cm.pi + phase
-      #else:
-        #p = phase
-      #return (radius, p)
     
     # instances
-    dut = Rect2Pol_cordic(iReal=real, iImag=imag, oRadius=radius, oPhase=phase, cycle_constraint=32, clk=clk, iStart=start, oDone=done, reset=reset)
+    #dut = toVerilog(Rect2Pol_cordic, iReal=real, iImag=imag, oRadius=radius, oPhase=phase, clk=clk, iStart=start, oDone=done, reset=reset)
+    dut = Rect2Pol_cordic(iReal=real, iImag=imag, oRadius=radius, oPhase=phase, clk=clk, iStart=start, oDone=done, reset=reset)
     inst_test = test(real, imag, radius, phase, clk, start, done)
     
     # clock generator
